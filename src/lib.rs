@@ -37,6 +37,11 @@ impl InterruptedStream {
             InterruptedStream::Socks5(socks) => socks.replay_error(replay.into()).await,
         }
     }
+    pub fn command(&self) -> Option<socks::Command> {
+        match self {
+            InterruptedStream::Socks5(socks) => Some(socks.command),
+        }
+    }
 }
 
 pub enum ReplayError {

@@ -169,6 +169,17 @@ impl InterruptedSocks5 {
             .await?;
         Ok(())
     }
+    pub async fn connect(mut self) -> Result<impl AsyncSocket, ProxyStreamError> {
+        match self.command {
+            Command::Connect => {
+                CommandResponse::new(Version::V5, Replay::Succeeded, self.addr)?
+                    .write(&mut self.socket)
+                    .await?;
+                Ok(self.socket)
+            }
+            _ => Err(ProxyStreamError::CommandNotSupported),
+        }
+    }
 }
 pub struct Socks5 {
     auth_method: Vec<AuthMethod>,

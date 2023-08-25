@@ -5,7 +5,7 @@ edition = '2021'
 homepage = 'https://github.com/narrowlink/proxy-stream'
 license = 'MIT'
 name = "proxy-stream"
-version = "0.0.1"
+version = "0.0.2"
 keywords = ["proxy", "tokio", "socks", "socks5"]
 
 [dependencies]

@@ -15,7 +15,7 @@ pub enum ProxyStreamError {
     TtlExpired,
     CommandNotSupported,
     AddressTypeNotSupported,
-    Unexpeted,
+    UnexpetedError,
     IoError(std::io::Error),
 }
 
@@ -49,7 +49,7 @@ impl Display for ProxyStreamError {
             ProxyStreamError::TtlExpired => write!(f, "TTL expired"),
             ProxyStreamError::CommandNotSupported => write!(f, "Command not supported"),
             ProxyStreamError::AddressTypeNotSupported => write!(f, "Address type not supported"),
-            ProxyStreamError::Unexpeted => write!(f, "Unexpected error"),
+            ProxyStreamError::UnexpetedError => write!(f, "Unexpected error"),
             ProxyStreamError::IoError(e) => write!(f, "IO error: {}", e),
         }
     }
