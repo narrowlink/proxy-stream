@@ -57,11 +57,11 @@ impl ProxyStream {
     pub async fn accept(
         &self,
         stream: impl AsyncSocket,
-    ) -> Result<InterruptedSocks5, ProxyStreamError> {
+    ) -> Result<InterruptedStream, ProxyStreamError> {
         match self.proxy_type {
             ProxyType::SOCKS5 => {
                 let socks = Socks5::new(vec![AuthMethod::Noauth])?;
-                socks.accept(stream).await
+                Ok(InterruptedStream::Socks5(socks.accept(stream).await?))
             }
         }
     }

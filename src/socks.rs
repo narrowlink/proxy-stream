@@ -257,6 +257,7 @@ impl AuthRequest {
             .write_all(
                 &[
                     [self.version as u8].as_ref(),
+                    [self.methods.len() as u8].as_ref(),
                     self.methods
                         .iter()
                         .map(|m| m.into())
