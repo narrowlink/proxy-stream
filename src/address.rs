@@ -98,3 +98,15 @@ impl ToSocketDestination for &str {
             .ok_or(ProxyStreamError::InvalidAddress)
     }
 }
+
+impl From<DestinationAddress> for (String, u16) {
+    fn from(value: DestinationAddress) -> Self {
+        match value {
+            DestinationAddress::Domain(domain, port) => (domain, port),
+            DestinationAddress::Ip(addr) => match addr {
+                SocketAddr::V4(addr) => (addr.ip().to_string(), addr.port()),
+                SocketAddr::V6(addr) => (addr.ip().to_string(), addr.port()),
+            },
+        }
+    }
+}
