@@ -27,9 +27,9 @@ impl InterruptedStream {
             InterruptedStream::Socks5(socks) => socks.serve(stream).await,
         }
     }
-    pub async fn connect(self) -> Result<impl AsyncSocket, ProxyStreamError> {
+    pub fn addr(&self) -> &address::DestinationAddress {
         match self {
-            InterruptedStream::Socks5(socks) => socks.connect().await,
+            InterruptedStream::Socks5(socks) => &socks.addr,
         }
     }
     pub async fn replay_error(self, replay: ReplayError) -> Result<(), ProxyStreamError> {
@@ -37,17 +37,17 @@ impl InterruptedStream {
             InterruptedStream::Socks5(socks) => socks.replay_error(replay.into()).await,
         }
     }
-
-    pub fn addr(&self) -> &address::DestinationAddress {
+    pub fn command(&self) -> Command {
         match self {
-            InterruptedStream::Socks5(socks) => &socks.addr,
+            InterruptedStream::Socks5(socks) => socks.command.into(),
         }
     }
-    pub fn command(&self) -> Option<socks::Command> {
-        match self {
-            InterruptedStream::Socks5(socks) => Some(socks.command),
-        }
-    }
+}
+#[derive(PartialEq)]
+pub enum Command {
+    Connect,
+    Bind,
+    UdpAssociate,
 }
 
 pub enum ReplayError {

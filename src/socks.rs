@@ -61,6 +61,16 @@ pub enum Command {
     UdpAssociate = 3,
 }
 
+impl From<Command> for crate::Command {
+    fn from(value: Command) -> Self {
+        match value {
+            Command::Connect => crate::Command::Connect,
+            Command::Bind => crate::Command::Bind,
+            Command::UdpAssociate => crate::Command::UdpAssociate,
+        }
+    }
+}
+
 impl Command {
     pub fn from(v: u8) -> Result<Self, ProxyStreamError> {
         match v {
