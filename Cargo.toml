@@ -1,0 +1,15 @@
+[package]
+authors = ["Narrowlink <opensource@narrowlink.com>"]
+description = "Multi protocol Proxy Implementation"
+edition = '2021'
+homepage = 'https://github.com/narrowlink/proxy-stream'
+license = 'MIT'
+name = "proxy-stream"
+version = "0.0.1"
+keywords = ["proxy", "tokio", "socks", "socks5"]
+
+[dependencies]
+tokio = { version = "1", features = ["io-util", "net","macros"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["net", "macros", "rt-multi-thread"] }
