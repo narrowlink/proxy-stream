@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use crate::error::ProxyStreamError;
+use crate::error::address::AddrError;
 
 #[derive(Debug, Clone)]
 pub enum DestinationAddress {
@@ -24,9 +24,9 @@ impl DestinationAddress {
             },
         }
     }
-    pub fn from_bytes(buf: &[u8], ip: bool) -> Result<Self, ProxyStreamError> {
+    pub fn from_bytes(buf: &[u8], ip: bool) -> Result<Self, AddrError> {
         if buf.len() < 3 {
-            return Err(ProxyStreamError::InvalidAddress);
+            return Err(AddrError::InvalidAddress);
         }
         if ip {
             let port = u16::from_be_bytes([buf[buf.len() - 2], buf[buf.len() - 1]]);
@@ -58,7 +58,7 @@ impl DestinationAddress {
                         0,
                     ))
                 }
-                _ => return Err(ProxyStreamError::InvalidAddress),
+                _ => return Err(AddrError::InvalidAddress),
             };
             Ok(DestinationAddress::Ip(ip))
         } else {
@@ -75,17 +75,17 @@ impl Default for DestinationAddress {
     }
 }
 pub trait ToSocketDestination {
-    fn to_destination_address(&self) -> Result<DestinationAddress, ProxyStreamError>;
+    fn to_destination_address(&self) -> Result<DestinationAddress, AddrError>;
 }
 
 impl ToSocketDestination for SocketAddr {
-    fn to_destination_address(&self) -> Result<DestinationAddress, ProxyStreamError> {
+    fn to_destination_address(&self) -> Result<DestinationAddress, AddrError> {
         Ok(DestinationAddress::Ip(*self))
     }
 }
 
 impl ToSocketDestination for &str {
-    fn to_destination_address(&self) -> Result<DestinationAddress, ProxyStreamError> {
+    fn to_destination_address(&self) -> Result<DestinationAddress, AddrError> {
         if let Ok(ip) = self.parse::<SocketAddr>() {
             return Ok(DestinationAddress::Ip(ip));
         }
@@ -95,7 +95,7 @@ impl ToSocketDestination for &str {
                     .ok()
                     .map(|port| DestinationAddress::Domain(domain.to_string(), port))
             })
-            .ok_or(ProxyStreamError::InvalidAddress)
+            .ok_or(AddrError::InvalidAddress)
     }
 }
 
