@@ -5,7 +5,7 @@ pub enum AuthMethod {
 }
 
 #[derive(Default)]
-#[allow(dead_code)] 
-pub(super) struct Config {
+#[allow(dead_code)]
+pub struct Config {
     pub auth_method: AuthMethod,
 }

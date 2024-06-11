@@ -2,31 +2,50 @@ mod config;
 
 use std::net::SocketAddr;
 
-use crate::{address::ToSocketDestination, error::socks::SocksError, ReplayError};
+use crate::{address::ToSocketDestination, error::socks::SocksError, ReplayStatus};
 pub use config::Config as SocksConfig;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::{
-    address::DestinationAddress, error::ProxyStreamError, AsyncSocket, InterruptedStream,
-    ProxyStream,
-};
-#[derive(Default)]
-pub struct Socks5 {
+use crate::{address::DestinationAddress, error::ProxyStreamError, AsyncSocket};
+
+pub struct Socks5;
+
+pub struct Socks5Client<T> {
     config: SocksConfig,
+    socket_stream: Option<T>,
+}
+
+#[allow(dead_code)]
+pub struct Socks5Server<T> {
+    config: SocksConfig,
+    socket_stream: Option<T>,
 }
 
 impl Socks5 {
-    pub fn new_with_config(config: SocksConfig) -> Socks5 {
-        Socks5 { config }
+    pub fn new_client(
+        config: SocksConfig,
+        socket_stream: impl AsyncSocket,
+    ) -> Socks5Client<impl AsyncSocket> {
+        Socks5Client {
+            config,
+            socket_stream: Some(socket_stream),
+        }
+    }
+    pub fn new_server(
+        config: SocksConfig,
+        socket_stream: impl AsyncSocket,
+    ) -> Socks5Server<impl AsyncSocket> {
+        Socks5Server {
+            config,
+            socket_stream: Some(socket_stream),
+        }
     }
 }
 
-impl ProxyStream<Socks5, SocksConfig> for Socks5 {
-    async fn accept(
-        &self,
-        mut socket_stream: impl AsyncSocket,
-    ) -> Result<impl InterruptedStream<Socks5>, ProxyStreamError> {
+impl<T: AsyncSocket> Socks5Server<T> {
+    pub async fn accept(&mut self) -> Result<ServerInterruptedSocks5Stream<T>, ProxyStreamError> {
+        let mut socket_stream = self.socket_stream.take().ok_or(ProxyStreamError::Closed)?;
         let auth_request = AuthRequest::read(&mut socket_stream).await?;
         if !auth_request.methods.contains(&AuthMethod::NoAuth) {
             Err(SocksError::MethodNotSupported)?;
@@ -36,43 +55,83 @@ impl ProxyStream<Socks5, SocksConfig> for Socks5 {
             .await?;
         let request = CommandRequest::read(&mut socket_stream).await?;
 
-        Ok(InterruptedSocks5Stream {
-            is_server: true,
+        Ok(ServerInterruptedSocks5Stream {
             addr: request.addr,
-            socket: Box::new(socket_stream),
+            socket: socket_stream,
         })
     }
+}
 
-    async fn connect(
-        &self,
-        mut socket_stream: impl AsyncSocket,
+impl<T: AsyncSocket> Socks5Client<T> {
+    pub async fn connect(
+        &mut self,
         addr: impl ToSocketDestination,
-    ) -> Result<impl InterruptedStream<Socks5>, ProxyStreamError> {
+    ) -> Result<ClientInterruptedSocks5Stream<T>, ProxyStreamError> {
+        let mut socket_stream = self.socket_stream.take().ok_or(ProxyStreamError::Closed)?;
         AuthRequest::new(Version::V5, self.config.auth_method.clone())?
             .write(&mut socket_stream)
             .await?;
         AuthResponse::read(&mut socket_stream).await?;
 
-        Ok(InterruptedSocks5Stream {
-            is_server: false,
+        Ok(ClientInterruptedSocks5Stream {
             addr: addr.to_destination_address()?,
-            socket: Box::new(socket_stream),
+            socket: socket_stream,
         })
     }
 }
 
-pub struct InterruptedSocks5Stream {
-    is_server: bool,
+pub struct ClientInterruptedSocks5Stream<T> {
     addr: DestinationAddress,
-    socket: Box<dyn AsyncSocket>,
+    socket: T,
+}
+pub struct ServerInterruptedSocks5Stream<T> {
+    addr: DestinationAddress,
+    socket: T,
 }
 
-impl InterruptedStream<Socks5> for InterruptedSocks5Stream {
-    fn addr(&self) -> &crate::address::DestinationAddress {
+impl<T: AsyncSocket> ClientInterruptedSocks5Stream<T> {
+    pub async fn replay_error(
+        mut self,
+        error: crate::ReplayStatus,
+    ) -> Result<(), ProxyStreamError> {
+        self.socket
+            .write_all(&[Version::V5 as u8, (&Replay::from(error)).into(), 0])
+            .await?;
+        Address::from(&DestinationAddress::default())
+            .write(&mut self.socket)
+            .await
+            .map_err(|e| e.into())
+    }
+
+    pub async fn proxied_stream(
+        mut self,
+    ) -> Result<impl crate::AsyncSocket, crate::error::ProxyStreamError> {
+        CommandRequest::new(Version::V5, Command::Connect, self.addr.to_owned())?
+            .write(&mut self.socket)
+            .await?;
+        CommandResponse::read(&mut self.socket).await?;
+
+        Ok(self.socket)
+    }
+    pub async fn serve(self, mut socket_stream: impl AsyncSocket) -> Result<(), ProxyStreamError>
+    where
+        Self: Sized,
+    {
+        let mut s = self.proxied_stream().await?;
+        _ = tokio::io::copy_bidirectional(&mut s, &mut socket_stream).await?;
+        Ok(())
+    }
+}
+
+impl<T: AsyncSocket> ServerInterruptedSocks5Stream<T> {
+    pub fn addr(&self) -> &crate::address::DestinationAddress {
         &self.addr
     }
 
-    async fn replay_error(mut self, error: crate::ReplayError) -> Result<(), ProxyStreamError> {
+    pub async fn replay_error(
+        mut self,
+        error: crate::ReplayStatus,
+    ) -> Result<(), ProxyStreamError> {
         self.socket
             .write_all(&[Version::V5 as u8, (&Replay::from(error)).into(), 0])
             .await?;
@@ -85,17 +144,19 @@ impl InterruptedStream<Socks5> for InterruptedSocks5Stream {
     async fn proxied_stream(
         mut self,
     ) -> Result<impl crate::AsyncSocket, crate::error::ProxyStreamError> {
-        if self.is_server {
-            CommandResponse::new(Version::V5, Replay::Succeeded, self.addr.to_owned())?
-                .write(&mut self.socket)
-                .await?;
-        } else {
-            CommandRequest::new(Version::V5, Command::Connect, self.addr.to_owned())?
-                .write(&mut self.socket)
-                .await?;
-            CommandResponse::read(&mut self.socket).await?;
-        }
+        CommandResponse::new(Version::V5, Replay::Succeeded, self.addr.to_owned())?
+            .write(&mut self.socket)
+            .await?;
+
         Ok(self.socket)
+    }
+    pub async fn serve(self, mut socket_stream: impl AsyncSocket) -> Result<(), ProxyStreamError>
+    where
+        Self: Sized,
+    {
+        let mut s = self.proxied_stream().await?;
+        _ = tokio::io::copy_bidirectional(&mut s, &mut socket_stream).await?;
+        Ok(())
     }
 }
 
@@ -442,17 +503,18 @@ impl CommandResponse {
     }
 }
 
-impl From<ReplayError> for Replay {
-    fn from(val: ReplayError) -> Self {
+impl From<ReplayStatus> for Replay {
+    fn from(val: ReplayStatus) -> Self {
         match val {
-            ReplayError::GeneralSocksServerFailure => Replay::GeneralSocksServerFailure,
-            ReplayError::ConnectionNotAllowedByRuleset => Replay::ConnectionNotAllowedByRuleset,
-            ReplayError::NetworkUnreachable => Replay::NetworkUnreachable,
-            ReplayError::HostUnreachable => Replay::HostUnreachable,
-            ReplayError::ConnectionRefused => Replay::ConnectionRefused,
-            ReplayError::TtlExpired => Replay::TtlExpired,
-            ReplayError::CommandNotSupported => Replay::CommandNotSupported,
-            ReplayError::AddressTypeNotSupported => Replay::AddressTypeNotSupported,
+            ReplayStatus::Succeeded => Replay::Succeeded,
+            ReplayStatus::GeneralSocksServerFailure => Replay::GeneralSocksServerFailure,
+            ReplayStatus::ConnectionNotAllowedByRuleset => Replay::ConnectionNotAllowedByRuleset,
+            ReplayStatus::NetworkUnreachable => Replay::NetworkUnreachable,
+            ReplayStatus::HostUnreachable => Replay::HostUnreachable,
+            ReplayStatus::ConnectionRefused => Replay::ConnectionRefused,
+            ReplayStatus::TtlExpired => Replay::TtlExpired,
+            ReplayStatus::CommandNotSupported => Replay::CommandNotSupported,
+            ReplayStatus::AddressTypeNotSupported => Replay::AddressTypeNotSupported,
         }
     }
 }

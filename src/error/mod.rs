@@ -13,4 +13,8 @@ pub enum ProxyStreamError {
     Socks(#[from] socks::SocksError),
     #[error("IOError: {0}")]
     IO(#[from] std::io::Error),
+    #[error("NotImplemented")]
+    NotImplemented,
+    #[error("Closed")]
+    Closed,
 }

@@ -1,4 +1,9 @@
-use std::net::SocketAddr;
+use core::fmt;
+use std::{
+    fmt::{Display, Formatter},
+    net::SocketAddr,
+    str::FromStr,
+};
 
 use crate::error::address::AddrError;
 
@@ -24,6 +29,10 @@ impl DestinationAddress {
             },
         }
     }
+
+    // pub fn from_str(s: &str) -> Result<Self, AddrError> {
+
+    // }
     pub fn from_bytes(buf: &[u8], ip: bool) -> Result<Self, AddrError> {
         if buf.len() < 3 {
             return Err(AddrError::InvalidAddress);
@@ -107,6 +116,71 @@ impl From<&DestinationAddress> for (String, u16) {
                 SocketAddr::V4(addr) => (addr.ip().to_string(), addr.port()),
                 SocketAddr::V6(addr) => (addr.ip().to_string(), addr.port()),
             },
+        }
+    }
+}
+
+impl Display for DestinationAddress {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            DestinationAddress::Domain(domain, port) => write!(f, "{}:{}", domain, port),
+            DestinationAddress::Ip(addr) => write!(f, "{}", addr),
+        }
+    }
+}
+
+impl FromStr for DestinationAddress {
+    type Err = AddrError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match SocketAddr::from_str(s) {
+            Ok(addr) => Ok(DestinationAddress::Ip(addr)),
+            Err(_) => {
+                let (domain, port_str) = s.rsplit_once(':').ok_or(AddrError::InvalidAddress)?;
+                let port = port_str.parse::<u16>().or(Err(AddrError::InvalidAddress))?;
+                let is_domain_valid = || {
+                    if domain.len() > 253 {
+                        return false;
+                    }
+
+                    let labels: Vec<&str> = domain.split('.').collect();
+
+                    for label in labels {
+                        if label.is_empty() {
+                            return false;
+                        }
+
+                        if label.len() > 63 {
+                            return false;
+                        }
+
+                        if label.starts_with('-') || label.ends_with('-') {
+                            return false;
+                        }
+
+                        if label.chars().next().unwrap().is_numeric() {
+                            return false;
+                        }
+
+                        for c in label.chars() {
+                            if !c.is_alphanumeric() && c != '-' {
+                                return false;
+                            }
+                        }
+                    }
+
+                    if domain.starts_with('.') || domain.ends_with('.') {
+                        return false;
+                    }
+
+                    true
+                };
+                if !is_domain_valid() {
+                    return Err(AddrError::InvalidAddress);
+                }
+
+                Ok(DestinationAddress::Domain(domain.to_string(), port))
+            }
         }
     }
 }
