@@ -22,3 +22,8 @@ pub enum ReplayStatus {
     CommandNotSupported,
     AddressTypeNotSupported,
 }
+
+pub enum Protocol {
+    Tcp,
+    Udp,
+}

@@ -2,7 +2,7 @@ mod config;
 
 use std::net::SocketAddr;
 
-use crate::{address::ToSocketDestination, error::socks::SocksError, ReplayStatus};
+use crate::{address::ToSocketDestination, error::socks::SocksError, Protocol, ReplayStatus};
 pub use config::Config as SocksConfig;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -55,7 +55,14 @@ impl<T: AsyncSocket> Socks5Server<T> {
             .await?;
         let request = CommandRequest::read(&mut socket_stream).await?;
 
+        let protocol = if matches!(request.command, Command::UdpAssociate) {
+            Protocol::Udp
+        } else {
+            Protocol::Tcp
+        };
+
         Ok(ServerInterruptedSocks5Stream {
+            protocol,
             addr: request.addr,
             socket: socket_stream,
         })
@@ -85,6 +92,7 @@ pub struct ClientInterruptedSocks5Stream<T> {
     socket: T,
 }
 pub struct ServerInterruptedSocks5Stream<T> {
+    protocol: crate::Protocol,
     addr: DestinationAddress,
     socket: T,
 }
@@ -141,7 +149,7 @@ impl<T: AsyncSocket> ServerInterruptedSocks5Stream<T> {
             .map_err(|e| e.into())
     }
 
-    async fn proxied_stream(
+    pub async fn proxied_stream(
         mut self,
     ) -> Result<impl crate::AsyncSocket, crate::error::ProxyStreamError> {
         CommandResponse::new(Version::V5, Replay::Succeeded, self.addr.to_owned())?
@@ -157,6 +165,9 @@ impl<T: AsyncSocket> ServerInterruptedSocks5Stream<T> {
         let mut s = self.proxied_stream().await?;
         _ = tokio::io::copy_bidirectional(&mut s, &mut socket_stream).await?;
         Ok(())
+    }
+    pub fn proto(&self) -> &crate::Protocol {
+        &self.protocol
     }
 }
 
