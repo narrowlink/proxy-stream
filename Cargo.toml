@@ -10,10 +10,10 @@ keywords = ["proxy", "tokio", "socks", "socks5"]
 
 [dependencies]
 tokio = { version = "1", features = ["io-util", "net", "macros"] }
-thiserror = { version = "1.0" }
-hyper = { version = "1.3", features = ["full"] }
-hyper-util = { version = "0.1.5", features = ["full"] }
-http-body-util = "0.1.1"
+thiserror = { version = "2.0" }
+hyper = { version = "1.8", features = ["full"] }
+hyper-util = { version = "0.1.19", features = ["full"] }
+http-body-util = "0.1.3"
 resumable-io = "0.0.1"
 log = "0.4"
 futures = { version = "0.3" }
