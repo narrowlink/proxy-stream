@@ -108,6 +108,12 @@ impl ToSocketDestination for &str {
     }
 }
 
+impl From<SocketAddr> for DestinationAddress {
+    fn from(value: SocketAddr) -> Self {
+        DestinationAddress::Ip(value)
+    }
+}
+
 impl From<&DestinationAddress> for (String, u16) {
     fn from(value: &DestinationAddress) -> Self {
         match value {
